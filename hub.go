@@ -10,9 +10,6 @@ type Hub struct {
 	// Registered clients.
 	clients map[*Client]bool
 
-	// Inbound messages from the clients.
-	broadcast chan []byte
-
 	// Send individual message.
 	message chan []byte
 
@@ -23,9 +20,10 @@ type Hub struct {
 	unregister chan *Client
 }
 
+
+
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
 		message:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -34,9 +32,79 @@ func NewHub() *Hub {
 }
 
 func (h *Hub) Broadcast(msg []byte)  {
-	h.broadcast <- msg
+	for client := range h.clients {
+		select {
+		case client.send <- msg:
+		default:
+			close(client.send)
+			delete(h.clients, client)
+		}
+	}
 }
 
+func (h *Hub) Clients() (map[*Client]bool)  {
+	return h.clients
+}
+
+
+func (h *Hub) Subscribe(session_id string,channel_id string) (error) {
+
+
+	for client := range h.clients {
+
+		if(client.id == session_id){
+
+			client.SubscribeChannel(channel_id)
+			return nil
+
+		}
+	}
+
+
+	return errors.New("NOT FOUND")
+
+}
+
+func (h *Hub) Unsubscribe(session_id string,channel_id string) (error) {
+
+
+	for client := range h.clients {
+
+		if(client.id == session_id){
+
+			client.SubscribeChannel(channel_id)
+			return nil
+
+		}
+	}
+
+	return errors.New("NOT FOUND")
+
+}
+
+
+func (h *Hub) SendChannel(channel_id string,message []byte) (error) {
+
+	for client := range h.clients {
+
+			if (client.HasChannel(channel_id)) {
+				select {
+				case client.send <- message:
+				default:
+					close(client.send)
+					delete(h.clients, client)
+				}
+			}
+
+	}
+
+	return nil
+
+}
+
+/*
+Sends to specific client id
+*/
 func (h *Hub) Send(client_id string,message []byte) (error) {
 
 	client,err := h.ClientFetch(client_id)
@@ -76,15 +144,6 @@ func (h *Hub) Run() {
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
-			}
-		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
 			}
 		}
 	}

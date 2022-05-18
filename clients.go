@@ -4,6 +4,8 @@
 
 package turbostream
 
+
+
 import (
 	"bytes"
 	"encoding/json"
@@ -11,10 +13,12 @@ import (
 	"github.com/gorilla/websocket"
 	"net/http"
 	"strings"
-
+	"sync"
 	/*"strings"*/
 	"time"
 )
+
+var mutex = &sync.RWMutex{}
 
 const (
 	// Time allowed to write a message to the peer.
@@ -43,13 +47,54 @@ var upgrader = websocket.Upgrader{
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
 	hub *Hub
-    //unique identifier
+    //unique identifier like a session
 	id string
 	// The websocket connection.
 	conn *websocket.Conn
-
+	//list of channels to subscribe to
+	channels []string
 	// Buffered channel of outbound messages.
 	send chan []byte
+}
+
+func (c *Client) SubscribeChannel(id string){
+
+	mutex.Lock()
+	c.channels = append(c.channels,id)
+	mutex.Unlock()
+
+}
+
+func (c *Client) UnsubscribeChannel(id string){
+
+	var nc []string
+	for _,ch := range c.channels {
+
+		if ( ch!=id ){
+
+	      nc = append(nc,ch)
+		}
+
+	}
+
+	mutex.Lock()
+	c.channels = nc //overwrite
+	mutex.Unlock()
+
+}
+
+func (c *Client) HasChannel(channel_id string)(bool){
+
+	 for _,ch := range c.channels {
+
+	 	if(ch==channel_id){
+	 		return true
+		}
+
+	 }
+
+	 return false
+
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -66,15 +111,15 @@ func (c *Client) readPump() {
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
-		_, message, err := c.conn.ReadMessage()
+		_, _, err := c.conn.ReadMessage() //do something with messages from client?
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				logger.Printf("error: %v", err)
 			}
 			break
 		}
-		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		c.hub.broadcast <- message
+		//message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
+		//c.hub.broadcast <- message
 	}
 }
 
@@ -103,7 +148,9 @@ func (c *Client) writePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
+
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+
 			if !ok {
 				// The hub closed the channel.
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
@@ -115,7 +162,6 @@ func (c *Client) writePump() {
 				return
 			}
 
-
 			resp := Response{Identifier: ResponseIdentifier{Channel: "Turbo::StreamsChannel",StreamName: fmt.Sprint(time.Now().Unix()) },Message: string(message)}
 
 			msg_full,err := jsonMarshal(resp)
@@ -125,13 +171,10 @@ func (c *Client) writePump() {
 				logger.Println(err)
 			}
 
-
 			//remove the new lines and tabs from the response
 		    r := strings.NewReplacer("\\n","","\\t","")
 
 		    msg := []byte(r.Replace(string(msg_full)))
-
-
 
 			w.Write(msg)
 
@@ -145,6 +188,7 @@ func (c *Client) writePump() {
 			if err := w.Close(); err != nil {
 				return
 			}
+
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -172,8 +216,8 @@ func HandleWs(hub *Hub,session_id string, w http.ResponseWriter, r *http.Request
 	}
 
 	client := &Client{hub: hub,id: session_id, conn: conn, send: make(chan []byte, 256)}
+	client.SubscribeChannel(defaultChannel)//this is a default channel
 	client.hub.register <- client
-
 	// Allow collection of memory referenced by the caller by doing all work in
 	// new goroutines.
 	go client.writePump()

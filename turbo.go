@@ -11,10 +11,11 @@ import (
 
 
 var logger *log.Logger
-
+var defaultChannel string
 
 func init(){
 
+	 defaultChannel  = "allclients"
 	 logger = log.New(ioutil.Discard, "[turbostream]", log.Lshortfile)
 
 }
