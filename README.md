@@ -32,6 +32,23 @@ turbostream.Logger(log.New(os.Stdout, "[turbostream]", log.Lshortfile))
 	hub.Broadcast(turbostream.Message("append","example_div_id",fmt.Sprint(time.Now().Unix(),"<br>")))
 ```
 
+### Subscribe to a channel
+
+```
+  hub.Subscribe(session_id,channel_name)
+```
+
+```
+  hub.Unsubscribe(session_id,channel_name)
+```
+
+### Send a message on a channel
+```
+ hub.SendChannel(channel_id,message)
+```
+
+The session id can be any unique value for the cleint
+
 ### Send a message to a specific client
 
 ```
