@@ -6,12 +6,14 @@ package turbostream
 
 import (
 	"bytes"
-	"log"
-	"net/http"
-	/*"strings"*/
-	"time"
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"net/http"
+	"strings"
+
+	/*"strings"*/
+	"time"
 )
 
 const (
@@ -67,7 +69,7 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				logger.Printf("error: %v", err)
 			}
 			break
 		}
@@ -81,6 +83,17 @@ func (c *Client) readPump() {
 // A goroutine running writePump is started for each connection. The
 // application ensures that there is at most one writer to a connection by
 // executing all writes from this goroutine.
+
+type Response struct{
+   Identifier ResponseIdentifier `json:"identifier"`
+   Message string `json:"message"`
+}
+
+type ResponseIdentifier struct {
+  Channel string `json:"channel"`
+  StreamName string `json:"signed_stream_name"`
+}
+
 func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -102,14 +115,25 @@ func (c *Client) writePump() {
 				return
 			}
 
-			msg := fmt.Sprintf(`{ 
-				"identifier": 
-				   "{\"channel\":\"Turbo::StreamsChannel\",\"signed_stream_name\":\"345adfklasdflkaslfk\"}",
-				"message":%q}`, string(message))
+
+			resp := Response{Identifier: ResponseIdentifier{Channel: "Turbo::StreamsChannel",StreamName: fmt.Sprint(time.Now().Unix()) },Message: string(message)}
+
+			msg_full,err := jsonMarshal(resp)
+
+			if(err!=nil){
+
+				logger.Println(err)
+			}
 
 
-			//msg = strings.Replace(msg, "$$MESSAGE$$", string(message), -1)
-			w.Write([]byte(msg))
+			//remove the new lines and tabs from the response
+		    r := strings.NewReplacer("\\n","","\\t","")
+
+		    msg := []byte(r.Replace(string(msg_full)))
+
+
+
+			w.Write(msg)
 
 			// Add queued chat messages to the current websocket message.
 			n := len(c.send)
@@ -130,11 +154,20 @@ func (c *Client) writePump() {
 	}
 }
 
+func jsonMarshal(t interface{}) ([]byte, error) {
+	buffer := &bytes.Buffer{}
+	encoder := json.NewEncoder(buffer)
+	encoder.SetEscapeHTML(false)
+	err := encoder.Encode(t)
+	return buffer.Bytes(), err
+}
+
+
 // serveWs handles websocket requests from the peer.
 func HandleWs(hub *Hub,session_id string, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 

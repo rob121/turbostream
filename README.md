@@ -4,6 +4,11 @@ For use with hotwire turbo, this package allows you to quickly get up and runnin
 
 ## Basic Examples
 
+### Attach a standard logger
+```
+turbostream.Logger(log.New(os.Stdout, "[turbostream]", log.Lshortfile))
+```
+
 ### Create a message hub
 ```
 	hub = turbostream.NewHub()

@@ -1,10 +1,30 @@
 package turbostream
 
-import("fmt")
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"html/template"
+	"io/ioutil"
+	"log"
+)
 
+
+var logger *log.Logger
+
+
+func init(){
+
+	 logger = log.New(ioutil.Discard, "[turbostream]", log.Lshortfile)
+
+}
+
+func Logger(l *log.Logger){
+       logger = l
+}
 
 /*
-ppend, prepend, (insert) before, (insert) after, replace, update, and remove
+append, prepend, (insert) before, (insert) after, replace, update, and remove
 */
 
 func Message(action string, target string,content string) ([]byte){
@@ -14,7 +34,7 @@ func Message(action string, target string,content string) ([]byte){
 
 		out := fmt.Sprintf(`<turbo-stream action='replace' target='%s'>
 	<template>INVALID ACTION SET</template>
-	</turbo-stream>`,action,target,content)
+	</turbo-stream>`,target)
 
 		return []byte(out)
 
@@ -24,6 +44,38 @@ func Message(action string, target string,content string) ([]byte){
 	<template>%s</template>
 	</turbo-stream>`,action,target,content)
 	return []byte(out)
+}
+
+func MessageTmpl(action string, target string,tmpl *template.Template,data map[string]interface{}) ([]byte,error){
+
+
+	if(!actionValid((action))){
+
+		out := fmt.Sprintf(`<turbo-stream action='replace' target='%s'>
+	<template>INVALID ACTION SET</template>
+	</turbo-stream>`,target)
+
+		return []byte(out),errors.New("INVALID ACTION")
+
+	}
+
+	var tpl bytes.Buffer
+
+	if err := tmpl.Execute(&tpl, data); err != nil {
+
+		out := fmt.Sprintf(`<turbo-stream action='replace' target='%s'>
+	<template>Template Parse Error %s</template>
+	</turbo-stream>`,target,err.Error())
+
+		return []byte(out),err
+
+	}
+
+	out := fmt.Sprintf(`<turbo-stream action='%s' target='%s'>
+	<template>%s</template>
+	</turbo-stream>`,action,target,tpl.String())
+
+	return []byte(out),nil
 }
 
 func actionValid(action string) (bool){
